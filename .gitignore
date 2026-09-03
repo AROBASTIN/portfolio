@@ -1,0 +1,57 @@
+# ==============================================================================
+# PORTFOLIO PROJECT GITIGNORE
+# ==============================================================================
+
+# Environment Variables & Sensitive Secrets (NEVER COMMIT REAL CREDENTIALS)
+.env
+.env.local
+.env.*.local
+*.env
+backend/.env
+backend/.env.local
+backend/.env.*.local
+!.env.example
+!backend/.env.example
+
+# Python Virtual Environments
+venv/
+.venv/
+env/
+ENV/
+backend/venv/
+backend/.venv/
+backend/env/
+
+# Python Bytecode & Caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+*.so
+
+# Node.js
+node_modules/
+npm-debug.log*
+
+# IDEs & Code Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*.sublime-project
+*.sublime-workspace
+
+# Operating System Files
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Logs & Temporary Files
+*.log
+logs/
+tmp/
+temp/
+scratch/

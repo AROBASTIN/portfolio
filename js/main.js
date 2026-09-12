@@ -15,7 +15,7 @@ const IS_LOCAL_HOST = window.location.hostname === 'localhost' ||
 const API_BASE_URL = window.PORTFOLIO_API_URL || (
   IS_LOCAL_HOST 
     ? 'http://127.0.0.1:5000' 
-    : 'https://portfolio-backend-4adi.onrender.com' // Replace with deployed production Flask API URL (e.g. Render / Railway)
+    : 'https://portfolio-backend-4adi.onrender.com'
 );
 
 document.addEventListener('DOMContentLoaded', () => {

@@ -372,6 +372,20 @@ document.addEventListener('DOMContentLoaded', () => {
         submitBtn.disabled = true;
       }
 
+      // Cold start detection timer for Render Free instance spin-up
+      let coldStartNoticeShown = false;
+      const coldStartTimer = setTimeout(() => {
+        if (submitBtn && submitBtn.disabled) {
+          submitBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> <span>Waking server...</span>`;
+          showToast('Backend server is waking up from sleep. Please wait 30–60 seconds...', 'info');
+          coldStartNoticeShown = true;
+        }
+      }, 4000);
+
+      // AbortController with 45-second timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 45000);
+
       try {
         const response = await fetch(`${API_BASE_URL}/api/contact`, {
           method: 'POST',
@@ -384,8 +398,12 @@ document.addEventListener('DOMContentLoaded', () => {
             email: email,
             message: message,
             _honeypot: honeypot
-          })
+          }),
+          signal: controller.signal
         });
+
+        clearTimeout(coldStartTimer);
+        clearTimeout(timeoutId);
 
         const data = await response.json().catch(() => null);
 
@@ -409,8 +427,10 @@ document.addEventListener('DOMContentLoaded', () => {
             }
           }, 3000);
         } else {
-          // Server / Validation / Rate limit error
-          const errorMsg = (data && data.message) ? data.message : 'Unable to send your message. Please try again.';
+          // Server / Validation / Rate limit / HTML 500 error
+          const errorMsg = (data && data.message) 
+            ? data.message 
+            : 'Backend server is waking up or email credentials need configuration. Please try again in 30 seconds.';
           showToast(errorMsg, 'error');
 
           if (submitBtn) {
@@ -419,9 +439,15 @@ document.addEventListener('DOMContentLoaded', () => {
           }
         }
       } catch (err) {
-        // Network / CORS / Backend unavailable error
+        clearTimeout(coldStartTimer);
+        clearTimeout(timeoutId);
+
         console.error('Contact form submission error:', err);
-        showToast('Unable to connect to the backend server. Please check your connection or try again later.', 'error');
+        if (err.name === 'AbortError') {
+          showToast('Request timed out waiting for backend spin-up. Please try submitting again now.', 'error');
+        } else {
+          showToast('Unable to connect to the backend server. Please check your connection or try again later.', 'error');
+        }
         
         if (submitBtn) {
           submitBtn.innerHTML = originalBtnContent;

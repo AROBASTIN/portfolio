@@ -112,18 +112,21 @@ def send_email_notification(name: str, visitor_email: str, message_body: str) ->
     Sends contact email to recipient using configured SMTP credentials.
     Sets visitor_email in the Reply-To header.
     Supports STARTTLS (port 587) and SSL (port 465) with safe fallback.
+    Uses strict 5s socket timeout to avoid exceeding Render proxy's 30s gateway limit.
     """
     mail_host = os.getenv('MAIL_HOST', 'smtp.gmail.com')
     mail_port = int(os.getenv('MAIL_PORT', '587'))
-    mail_username = os.getenv('MAIL_USERNAME', '')
+    mail_username = os.getenv('MAIL_USERNAME', '').strip()
     mail_password = os.getenv('MAIL_PASSWORD', '').replace(' ', '').strip()
     mail_from = os.getenv('MAIL_FROM') or mail_username or 'no-reply@portfolio.local'
     mail_to = os.getenv('MAIL_TO', 'arobastin5@gmail.com')
     use_tls = os.getenv('MAIL_USE_TLS', 'True').lower() in ('true', '1', 'yes')
     use_ssl = os.getenv('MAIL_USE_SSL', 'False').lower() in ('true', '1', 'yes')
 
-    if not mail_username or not mail_password or 'PASTE_YOUR_GMAIL' in mail_password:
-        logger.error("SMTP credentials (MAIL_USERNAME or MAIL_PASSWORD) are not configured.")
+    # Fast-fail if credentials are missing or unconfigured placeholder values
+    placeholders = ['PASTE_YOUR_GMAIL', 'your-app-password', 'your-email', 'example.com']
+    if not mail_username or not mail_password or any(p in mail_username.lower() for p in placeholders) or any(p in mail_password.lower() for p in placeholders):
+        logger.error("SMTP credentials (MAIL_USERNAME or MAIL_PASSWORD) are not properly configured.")
         return False
 
     # Create Email message
@@ -158,9 +161,9 @@ def send_email_notification(name: str, visitor_email: str, message_body: str) ->
         try:
             logger.info(f"Attempting SMTP email dispatch via {mail_host}:{port} (mode={mode})...")
             if mode == 'ssl':
-                server = smtplib.SMTP_SSL(mail_host, port, context=ssl_context, timeout=30)
+                server = smtplib.SMTP_SSL(mail_host, port, context=ssl_context, timeout=5)
             else:
-                server = smtplib.SMTP(mail_host, port, timeout=30)
+                server = smtplib.SMTP(mail_host, port, timeout=5)
                 server.ehlo()
                 if use_tls or port == 587:
                     server.starttls(context=ssl_context)

@@ -117,9 +117,13 @@ def send_via_resend_api(api_key: str, name: str, visitor_email: str, message_bod
     """Sends transactional email via Resend HTTPS REST API (Port 443)."""
     try:
         logger.info("Attempting email dispatch via Resend HTTPS API...")
-        sender = mail_from if ('<' in mail_from or '@' in mail_from) else f"Portfolio Contact <{mail_from}>"
-        # Default Resend onboarding sender if custom domain is not set
-        if 'portfolio.local' in sender or 'example.com' in sender:
+        
+        # Resend requires onboarding@resend.dev for testing unless a verified custom domain is configured in MAIL_FROM
+        mail_from_env = os.getenv('MAIL_FROM', '').strip()
+        public_domains = ['gmail.com', 'yahoo.com', 'outlook.com', 'hotmail.com', 'example.com', 'portfolio.local']
+        if mail_from_env and not any(domain in mail_from_env.lower() for domain in public_domains):
+            sender = mail_from_env
+        else:
             sender = "Portfolio Contact <onboarding@resend.dev>"
 
         payload = {
@@ -202,8 +206,11 @@ def send_via_brevo_api(api_key: str, name: str, visitor_email: str, message_body
         return False
 
 
-def send_via_smtp(name: str, visitor_email: str, message_body: str, mail_host: str, mail_port: int, mail_username: str, mail_password: str, mail_from: str, mail_to: str, use_tls: bool, use_ssl: bool) -> bool:
-    """Fallback SMTP dispatch supporting STARTTLS and SSL."""
+def send_via_smtp_ipv4(name: str, visitor_email: str, message_body: str, mail_host: str, mail_port: int, mail_username: str, mail_password: str, mail_from: str, mail_to: str, use_tls: bool, use_ssl: bool) -> bool:
+    """
+    Fallback SMTP dispatch.
+    Forces IPv4 socket resolution (AF_INET) to bypass container IPv6 network unreachable errors.
+    """
     safe_name = name.replace('\r', '').replace('\n', '').strip()
     msg = EmailMessage()
     msg['Subject'] = f"Portfolio Contact - {safe_name}"
@@ -217,6 +224,15 @@ def send_via_smtp(name: str, visitor_email: str, message_body: str, mail_host: s
         f"Message:\n{message_body}\n"
     )
 
+    # Force IPv4 resolution to prevent [Errno 101] Network is unreachable on dual-stack hosts
+    try:
+        addr_info = socket.getaddrinfo(mail_host, mail_port, socket.AF_INET, socket.SOCK_STREAM)
+        ipv4_target = addr_info[0][4][0]
+        logger.info(f"Resolved {mail_host} to IPv4 address {ipv4_target}")
+    except Exception as e:
+        logger.warning(f"IPv4 resolution for {mail_host} failed ({str(e)}), falling back to hostname.")
+        ipv4_target = mail_host
+
     ssl_context = ssl.create_default_context()
     strategies = []
     if use_ssl or mail_port == 465:
@@ -229,7 +245,7 @@ def send_via_smtp(name: str, visitor_email: str, message_body: str, mail_host: s
     last_error = None
     for mode, port in strategies:
         try:
-            logger.info(f"Attempting SMTP dispatch to {mail_host}:{port} (mode={mode})...")
+            logger.info(f"Attempting SMTP dispatch to {mail_host} ({ipv4_target}:{port}, mode={mode})...")
             if mode == 'ssl':
                 server = smtplib.SMTP_SSL(mail_host, port, context=ssl_context, timeout=8)
             else:
@@ -257,7 +273,7 @@ def send_email_notification(name: str, visitor_email: str, message_body: str) ->
     Orchestrates email dispatch:
     1. Resend HTTPS API (if RESEND_API_KEY is configured)
     2. Brevo HTTPS API (if BREVO_API_KEY is configured)
-    3. Direct SMTP fallback (if MAIL_USERNAME & MAIL_PASSWORD are configured)
+    3. SMTP with forced IPv4 socket fallback
     """
     mail_to = os.getenv('MAIL_TO', 'arobastin5@gmail.com').strip()
     mail_username = os.getenv('MAIL_USERNAME', '').strip()
@@ -276,7 +292,7 @@ def send_email_notification(name: str, visitor_email: str, message_body: str) ->
         if send_via_brevo_api(brevo_key, safe_name, visitor_email, message_body, mail_to, mail_from):
             return True
 
-    # 3. Tertiary: Direct SMTP fallback
+    # 3. Tertiary: SMTP with forced IPv4
     mail_host = os.getenv('MAIL_HOST', 'smtp.gmail.com').strip()
     mail_port = int(os.getenv('MAIL_PORT', '587'))
     mail_password = os.getenv('MAIL_PASSWORD', '').replace(' ', '').strip()
@@ -287,7 +303,7 @@ def send_email_notification(name: str, visitor_email: str, message_body: str) ->
         logger.error("No valid email API keys (RESEND_API_KEY / BREVO_API_KEY) or SMTP credentials configured.")
         return False
 
-    return send_via_smtp(safe_name, visitor_email, message_body, mail_host, mail_port, mail_username, mail_password, mail_from, mail_to, use_tls, use_ssl)
+    return send_via_smtp_ipv4(safe_name, visitor_email, message_body, mail_host, mail_port, mail_username, mail_password, mail_from, mail_to, use_tls, use_ssl)
 
 
 @app.route('/api/health', methods=['GET'])
